@@ -63,26 +63,69 @@ var nodes = data.map(function(item){
 	var node = createNode(item.relativePath);
 	return {
 		info: item,
-		node: node
+		node: node,
+		level: 0
 	};
 });
 
-var x = 0;
-var y = 0;
 nodes.forEach(function(node){
-	node.node.position({
-		x: x,
-		y: y
+	node.info.deps.forEach(function(dep){
+		if(typeof dep === "number"){
+			nodes[dep].level ++;
+		}
 	});
+});
+
+// var levels = {};
+// nodes.forEach(function(node){
+// 	var level = node.level;
+// 	if(!levels[level]){
+// 		levels[level] = [];
+// 	}
+
+// 	levels[level].push(node);
+// });
+
+// levels = Object.keys(levels).sort(function(a, b){
+// 	return a - b;
+// }).map(function(level, index){
+// 	var _nodes = levels[level];
+// 	var x = 0;
+// 	_nodes.forEach(function(node){
+// 		node.node.position({
+// 			x: x,
+// 			y: index * 60
+// 		});
+// 		x += node.node.width + 20;
+
+// 		node.lines = node.info.deps.filter(function(dep){
+// 			return typeof dep === "number";
+// 		}).map(function(dep){
+// 			return createLine(node.node, nodes[dep].node);
+// 		});
+// 	});
+// });
+
+var levels = {};
+
+nodes.forEach(function(node, index){
+	var level = (index / 6) | 0;
+	if(!levels[level]){
+		levels[level] = 0;
+	}
+
+	node.node.position({
+		x: levels[level],
+		y: level * 60
+	});
+	
+	levels[level] += node.node.width + 20;
 
 	node.lines = node.info.deps.filter(function(dep){
 		return typeof dep === "number";
 	}).map(function(dep){
 		return createLine(node.node, nodes[dep].node);
 	});
-
-	x += node.node.width;
-	y += node.node.height;
 });
 
 nodes.forEach(function(node){
