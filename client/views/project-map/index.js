@@ -5,6 +5,8 @@ var nodeContainer = document.getElementById("nodes");
 var svgns = "http://www.w3.org/2000/svg";
 
 function createNode(text, position){
+	text = text.replace(/\/index\.js$/, "").replace(/\.js$/, "");
+
 	var node = document.createElementNS(svgns, "g");
 	node.setAttributeNS(null, "opacity", "0");
 	node.innerHTML = '<rect x="0" y="0" rx="3" ry="3" width="24" height="24" style="fill:#fff;stroke:#333;stroke-width:0.5;"></rect>\
@@ -33,6 +35,14 @@ function createNode(text, position){
 			var width = +textNode.textLength.baseVal.value.toFixed(1) + 20;
 			rectNode.setAttributeNS(null, "width", width);
 			this.width = width + 1;
+		},
+		focus: function(){
+			rectNode.style.strokeWidth = 2;
+			rectNode.style.stroke = "#f00";
+		},
+		blur: function(){
+			rectNode.style.strokeWidth = 0.5;
+			rectNode.style.stroke = "#333";
 		}
 	};
 }
@@ -43,13 +53,37 @@ function createLine(node1, node2){
 	path.setAttributeNS(null, "stroke", "#999");
 	path.setAttributeNS(null, "stroke-width", "1");
 	path.setAttributeNS(null, "marker-end", "url(#point)");
-	function draw(){
+	function draw(width, color){
 		var node1x = node1.x + node1.width / 2;
 		var node1y = node1.y + node1.height / 2;
 		var node2x = node2.x + node2.width / 2;
 		var node2y = node2.y + node2.height / 2;
+		var mx = (node1x + node2x) / 2;
+		var my = (node1y + node2y) / 2;
 
-		path.setAttributeNS(null, "d", "M" + [node1x, node1y].join(" ") + "A" + [node2x - node1x, node2y - node1y, 0, 0, 0, node2x, node2y].join(" "));
+		if(node2y <= node1y){
+			//console.error("error");
+			return {
+				refresh: function(){}
+			};
+		}
+
+		if(node2x >= node1x && node2y >= node1y){
+			path.setAttributeNS(null, "d", "M" + [node1x, node1y].join(" ") + "A" + [node2x - node1x, node2y - node1y, 0, 0, 0, node2x, node2y].join(" "));
+			//path.setAttributeNS(null, "d", "M" + [node1x, node1y].join(" ") + "A" + [mx - node1x, my - node1y, 0, 0, 0, mx, my].join(" ") + "M" + [mx, my].join(" ") + "A" + [node2x - mx, my - node2y, 0, 0, 1, node2x, node2y].join(" "));
+		}else{
+			path.setAttributeNS(null, "d", "M" + [node1x, node1y].join(" ") + "A" + [node2x - node1x, node1y - node2y, 0, 0, 1, node2x, node2y].join(" "));
+			//path.setAttributeNS(null, "d", "M" + [node1x, node1y].join(" ") + "A" + [mx - node1x, node1y - my, 0, 0, 1, mx, my].join(" ") + "M" + [mx, my].join(" ") + "A" + [node2x - mx, node2y - my, 0, 0, 0, node2x, node2y].join(" "));
+		}
+		// path.setAttributeNS(null, "d", "M" + [node1x, node1y].join(" ") + "L" + [node2x, node2y].join(" "));
+
+		if(width){
+			path.setAttributeNS(null, "stroke-width", width);
+		}
+
+		if(color){
+			path.setAttributeNS(null, "stroke", color);
+		}
 	}
 	draw();
 	lineContainer.appendChild(path);
@@ -63,18 +97,21 @@ var nodes = data.map(function(item){
 	var node = createNode(item.relativePath);
 	return {
 		info: item,
-		node: node,
-		level: 0
+		node: node
 	};
 });
 
-nodes.forEach(function(node){
-	node.info.deps.forEach(function(dep){
-		if(typeof dep === "number"){
-			nodes[dep].level ++;
-		}
-	});
-});
+// nodes.forEach(function(node){
+// 	node.info.deps.forEach(function(dep){
+// 		if(typeof dep === "number"){
+// 			// nodes[dep].level ++;
+// 			if(!nodes[dep].depBys){
+// 				nodes[dep].depBys = [];
+// 			}
+// 			nodes[dep].depBys.push(node.id);
+// 		}
+// 	});
+// });
 
 // var levels = {};
 // nodes.forEach(function(node){
@@ -106,20 +143,65 @@ nodes.forEach(function(node){
 // 	});
 // });
 
-var levels = {};
 
+(function setLevel(node){
+	if(!node.level){
+		node.level = 0;
+	}
+	node.info.deps.forEach(function(id){
+		if(typeof id === "number"){
+			nodes[id].level = Math.max(nodes[id].level || 0, node.level + 1);
+			setLevel(nodes[id]);
+		}
+	});
+})(nodes[0]);
+
+var levelWidth = [];
+var levelCount = {};
+var minMargin = 20;
+nodes.forEach(function(node){
+	if(typeof node.level !== "number"){
+		return;
+	}
+	if(!levelWidth[node.level]){
+		levelWidth[node.level] = 0;
+	}
+	if(!levelCount[node.level]){
+		levelCount[node.level] = 0;
+	}
+	levelWidth[node.level] += node.node.width + minMargin;
+	levelCount[node.level] += 1;
+});
+var maxLevelWidth = Math.max.apply(null, levelWidth) + minMargin;
+
+var levelMargin = {};
+for(var level in levelCount){
+	levelMargin[level] = ((maxLevelWidth - levelWidth[level]) + levelCount[level] * minMargin) / (levelCount[level] + 1);
+}
+
+
+var levels = {};
 nodes.forEach(function(node, index){
-	var level = (index / 6) | 0;
+	if(typeof node.level !== "number"){
+		node.node.position({
+			x: 0,
+			y: -100
+		});
+
+		return;
+	}
+
+	var level = node.level;
 	if(!levels[level]){
-		levels[level] = 0;
+		levels[level] = levelMargin[level];
 	}
 
 	node.node.position({
 		x: levels[level],
-		y: level * 60
+		y: level * 200
 	});
-	
-	levels[level] += node.node.width + 20;
+
+	levels[level] += node.node.width + levelMargin[level];
 
 	node.lines = node.info.deps.filter(function(dep){
 		return typeof dep === "number";
@@ -128,10 +210,38 @@ nodes.forEach(function(node, index){
 	});
 });
 
+var currentNode;
 nodes.forEach(function(node){
-	node.lines.forEach(function(line){
-		line.refresh();
-	});
+	if(node.lines){
+		node.lines.forEach(function(line){
+			line.refresh();
+		});
+		node.node.target.onclick = function(){
+			if(currentNode){
+				currentNode.node.blur();
+				currentNode.lines.forEach(function(line){
+					line.refresh(1, "#999");
+				});
+				currentNode.info.deps.forEach(function(id){
+					if(typeof id === "number"){
+						nodes[id].node.blur();
+					}
+				});
+			}
+
+			node.node.focus();
+			node.lines.forEach(function(line){
+				line.refresh(2, "#333");
+			});
+			node.info.deps.forEach(function(id){
+				if(typeof id === "number"){
+					nodes[id].node.focus();
+				}
+			});
+
+			currentNode = node;
+		};
+	}
 });
 
 document.onmousewheel=function(){
